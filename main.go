@@ -88,8 +88,8 @@ func handleRequestOrRedirect(res http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func setupLimiter() {
-	maxReq := os.Getenv("R_MAX")
+func setupLimiter(maxReq string) {
+
 	rMax, err := strconv.Atoi(maxReq)
 	if err != nil {
 		log.Println("Use deafult max req count")
@@ -99,14 +99,16 @@ func setupLimiter() {
 }
 
 func main() {
-
-	setupLimiter()
+	maxReq := os.Getenv("R_MAX")
 
 	flag.StringVar(&redirectUrl, "redirect", "", "url for riderrect")
-
+	flag.StringVar(&maxReq, "rn", "", "req number to handle")
 	flag.StringVar(&port, "port", "", "app port")
 
 	flag.Parse()
+
+	setupLimiter(maxReq)
+
 	if port == "" {
 		log.Fatal("App port is empty")
 	}
