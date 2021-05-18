@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -19,30 +18,29 @@ var Limiter *rate.Limiter
 var port string
 var redirectUrl string
 
-// Serve a reverse proxy for a given url
+func getAttemptsNumberFromHeader(req *http.Request) int {
+	attempts := req.Header.Get("attempts")
+	attemptsNumber, err := strconv.Atoi(attempts)
+	if err != nil {
+		log.Print("Probably zero attempts")
+	}
+	return attemptsNumber
+}
+
 func serveReverseProxy(target string, res http.ResponseWriter, req *http.Request) {
-	attempts := getAttemptsFromContext(req)
-	// parse the url
 	url, _ := url.Parse(target)
 
-	// create the reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(url)
 
-	// Update the headers to allow for SSL redirection
 	req.URL.Host = url.Host
 	req.URL.Scheme = url.Scheme
 	req.Header.Set("X-Forwarded-Host", req.Header.Get("Host"))
 	req.Host = url.Host
 
-	att := req.Header.Get("att")
-	attN, _ := strconv.Atoi(att)
-	req.Header.Set("att", fmt.Sprint(attN+1))
-	// Note that ServeHttp is non blocking and uses a go routine under the hood
-
-	ctx := context.WithValue(req.Context(), "att", attempts+1)
+	req.Header.Set("attempts", fmt.Sprint(getAttemptsNumberFromHeader(req)+1))
 	log.Println("Redirect to " + redirectUrl)
 
-	proxy.ServeHTTP(res, req.WithContext(ctx))
+	proxy.ServeHTTP(res, req)
 }
 
 func handle(req *http.Request) {
@@ -56,31 +54,16 @@ func handle(req *http.Request) {
 	log.Println(str)
 }
 
-func getAttemptsFromContext(r *http.Request) int {
-	if attempts, ok := r.Context().Value("att").(int); ok {
-		log.Println("Att found")
-		return attempts
-	}
-	return 1
-}
-
 func handleRequestOrRedirect(res http.ResponseWriter, req *http.Request) {
 
-	att := req.Header.Get("att")
-	attN, _ := strconv.Atoi(att)
-	log.Println(fmt.Sprintf("attN: - %d", attN))
-	if attN > 5 {
+	attemptsNum := getAttemptsNumberFromHeader(req)
+	log.Println(fmt.Sprintf("attempts: %d", attemptsNum))
+	if attemptsNum > 5 {
 		http.Error(res, "Service not available", http.StatusServiceUnavailable)
 		return
 	}
 
-	attempts := getAttemptsFromContext(req)
-	log.Println(fmt.Sprintf("Att: - %d", attempts))
-	if attempts > 5 {
-		http.Error(res, "Service not available", http.StatusServiceUnavailable)
-		return
-	}
-	if Limiter.Allow() == false {
+	if !Limiter.Allow() {
 		serveReverseProxy(redirectUrl, res, req)
 	} else {
 		log.Println("Req handle at: " + req.Host)
